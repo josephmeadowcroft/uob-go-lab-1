@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // question struct stores a single question and its corresponding answer.
@@ -38,21 +39,47 @@ func questions() []question {
 }
 
 // ask asks a question and returns an updated score depending on the answer.
-func ask(s score, question question) score {
-	fmt.Println(question.q)
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("Enter answer: ")
-	scanner.Scan()
-	text := scanner.Text()
-	if strings.Compare(text, question.a) == 0 {
-		fmt.Println("Correct!")
-		s++
-	} else {
-		fmt.Println("Incorrect :-(")
+func ask(channel chan score, doneChannel chan int) {
+	s := score(0)
+	questions := questions()
+	for _, question := range questions {
+		fmt.Println(question.q)
+		scanner := bufio.NewScanner(os.Stdin)
+		fmt.Print("Enter answer: ")
+		scanner.Scan()
+		text := scanner.Text()
+		if strings.Compare(text, question.a) == 0 {
+			fmt.Println("Correct!")
+			s++
+		} else {
+			fmt.Println("Incorrect :-(")
+		}
+		channel <- s
 	}
-	return s
+	doneChannel <- 1
 }
 
 func main() {
-	// TODO: Write a quiz program
+
+	channel := make(chan score)
+	doneChannel := make(chan int)
+	go ask(channel, doneChannel)
+	timerChannel := time.After(5 * time.Second)
+
+	final := score(0)
+
+OuterLoop:
+	for {
+		select {
+		case s := <-channel:
+			final = s
+		case <-doneChannel:
+			fmt.Println("Quiz complete!")
+			break OuterLoop
+		case <-timerChannel:
+			fmt.Println("Time's up!")
+			break OuterLoop
+		}
+	}
+	fmt.Println("Final score:", final)
 }
