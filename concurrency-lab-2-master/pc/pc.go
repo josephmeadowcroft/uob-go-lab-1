@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	//"github.com/ChrisGora/semaphore"
 	"math/rand"
+	"sync"
 	"time"
+	"github.com/ChrisGora/semaphore"
 )
 
 type buffer struct {
@@ -34,18 +35,27 @@ func (buffer *buffer) put(x int) {
 	buffer.write = (buffer.write + 1) % len(buffer.b)
 }
 
-func producer(buffer *buffer, start, delta int) {
+func producer(buffer *buffer, start, delta int, spaceAvailable semaphore.Semaphore, workAvailable semaphore.Semaphore, mu *sync.Mutex) {
 	x := start
 	for {
+		spaceAvailable.Wait()
+		mu.Lock()
 		buffer.put(x)
+		mu.Unlock()
+		workAvailable.Post()
+
 		x = x + delta
 		time.Sleep(time.Duration(rand.Intn(500)) * time.Millisecond)
 	}
 }
 
-func consumer(buffer *buffer) {
+func consumer(buffer *buffer, spaceAvailable semaphore.Semaphore, workAvailable semaphore.Semaphore, mu *sync.Mutex) {
 	for {
+		workAvailable.Wait()
+		mu.Lock()
 		_ = buffer.get()
+		mu.Unlock()
+		spaceAvailable.Post()
 		time.Sleep(time.Duration(rand.Intn(5000)) * time.Millisecond)
 	}
 }
@@ -53,11 +63,13 @@ func consumer(buffer *buffer) {
 func main() {
 	buffer := newBuffer(5)
 
-	//spaceAvailable := semaphore.Init(5, 5)
-	//workAvailable := semaphore.Init(5, 0)
+	spaceAvailable := semaphore.Init(5, 5)
+	workAvailable := semaphore.Init(5, 0)
 
-	go producer(&buffer, 1, 1)
-	go producer(&buffer, 1000, -1)
+	var mu sync.Mutex
 
-	consumer(&buffer)
+	go producer(&buffer, 1, 1, spaceAvailable, workAvailable, &mu)
+	go producer(&buffer, 1000, -1, spaceAvailable, workAvailable, &mu)
+
+	consumer(&buffer, spaceAvailable, workAvailable, &mu)
 }
